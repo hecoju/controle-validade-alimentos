@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#edf3eb">
+  <title>Validade dos alimentos</title>
+  <style>
+    :root { color-scheme: light; font: 16px/1.5 system-ui, sans-serif; color: #1c3025; background: #edf3eb; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    main { max-width: 940px; margin: auto; padding: 44px 24px 64px; }
+    header { margin-bottom: 30px; }
+    h1 { font-family: Georgia, serif; font-size: clamp(2.25rem, 7vw, 3.9rem); line-height: 1.06; letter-spacing: -.035em; margin: 0 0 10px; }
+    h2 { font-size: 1.25rem; margin: 0 0 16px; }
+    p { margin: 0; }
+    header p, .empty, .hint { color: #495d50; }
+    section { background: #fff; border: 1px solid #cddbd0; border-radius: 18px; padding: 23px; margin-bottom: 18px; }
+    form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(155px, .7fr) auto; align-items: end; gap: 12px; }
+    label { display: block; font-weight: 650; margin-bottom: 5px; }
+    input, button { font: inherit; border-radius: 9px; min-height: 44px; }
+    input { width: 100%; min-width: 0; padding: 8px 11px; border: 1px solid #879d8e; color: inherit; background: #fff; }
+    button { cursor: pointer; font-weight: 650; padding: 8px 14px; }
+    button[type="submit"] { background: #244f37; color: white; border: 1px solid #244f37; }
+    button[type="submit"]:hover { background: #163c28; }
+    .remove { color: #253e30; border: 1px solid #a9bbae; background: #fff; }
+    .remove:hover { background: #eef4ed; }
+    :focus-visible { outline: 3px solid #315b9d; outline-offset: 3px; }
+    ul { padding: 0; margin: 0; list-style: none; }
+    li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 12px; align-items: center; border-top: 1px solid #dde6de; padding: 12px 0; }
+    li:last-child { padding-bottom: 0; }
+    .product { display: block; font-weight: 700; overflow-wrap: anywhere; }
+    time { color: #495d50; font-size: .9rem; }
+    .badge { border-radius: 999px; padding: 4px 10px; font-size: .875rem; font-weight: 650; }
+    .valid { background: #e3f0df; color: #254a2c; }
+    .soon { background: #fff0c9; color: #6b4600; }
+    .expired { background: #f9e0df; color: #812c28; }
+    .hint, #feedback { font-size: .875rem; margin-top: 12px; }
+    #feedback:empty { margin: 0; }
+    #feedback[data-error="true"] { color: #812c28; }
+    @media (max-width: 610px) {
+      main { padding: 26px 14px 40px; }
+      section { padding: 16px; }
+      form { grid-template-columns: minmax(0, 1fr); }
+      li { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+      li > div { grid-column: 1 / -1; }
+      .badge { justify-self: start; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Validade dos alimentos</h1>
+      <p>Cadastre os produtos e veja quais vencem primeiro.</p>
+    </header>
+
+    <section aria-labelledby="register-title">
+      <h2 id="register-title">Cadastrar produto</h2>
+      <form id="product-form">
+        <div>
+          <label for="product-name">Nome do produto</label>
+          <input id="product-name" type="text" required maxlength="80" placeholder="Ex.: Iogurte natural">
+        </div>
+        <div>
+          <label for="expiry-date">Data de validade</label>
+          <input id="expiry-date" type="date" required min="0001-01-01" max="9999-12-31">
+        </div>
+        <button type="submit">Adicionar produto</button>
+      </form>
+      <p id="feedback" role="status" aria-live="polite"></p>
+    </section>
+
+    <section aria-labelledby="products-title">
+      <h2 id="products-title" tabindex="-1">Produtos cadastrados</h2>
+      <p id="empty" class="empty">Nenhum produto cadastrado.</p>
+      <ul id="product-list" aria-labelledby="products-title"></ul>
+      <p class="hint">A lista é salva neste navegador.</p>
+    </section>
+  </main>
+
+  <script>
+    'use strict';
+
+    const storageKey = 'validade-alimentos:v1';
+    const millisecondsPerDay = 86400000;
+    const form = document.querySelector('#product-form');
+    const nameInput = document.querySelector('#product-name');
+    const expiryInput = document.querySelector('#expiry-date');
+    const heading = document.querySelector('#products-title');
+    const empty = document.querySelector('#empty');
+    const list = document.querySelector('#product-list');
+    const feedback = document.querySelector('#feedback');
+
+    function isDate(value) {
+      if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) || value.startsWith('0000')) return false;
+      const date = new Date(value + 'T00:00:00Z');
+      return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+    }
+
+    function dayNumber(value) {
+      return Date.parse(value + 'T00:00:00Z') / millisecondsPerDay;
+    }
+
+    function todayKey(date = new Date()) {
+      const year = String(date.getFullYear()).padStart(4, '0');
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+
+    function expiryStatus(expiry, today) {
+      const difference = dayNumber(expiry) - dayNumber(today);
+      if (difference < 0) return ['Vencido', 'expired'];
+      if (difference === 0) return ['Vence hoje', 'soon'];
+      if (difference <= 3) return [`Vence em ${difference} ${difference === 1 ? 'dia' : 'dias'}`, 'soon'];
+      return ['Dentro do prazo', 'valid'];
+    }
+
+    function announce(message, error = false) {
+      feedback.textContent = message;
+      feedback.dataset.error = String(error);
+    }
+
+    function readProducts() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(storageKey) ?? '[]');
+        if (!Array.isArray(saved)) throw new Error('Dados inválidos');
+        return saved.filter(item => item && typeof item.id === 'string'
+          && typeof item.name === 'string' && item.name.trim() && isDate(item.expiry));
+      } catch {
+        announce('Não foi possível ler os dados salvos deste navegador.', true);
+        return [];
+      }
+    }
+
+    let products = readProducts();
+
+    function storeProducts(nextProducts) {
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(nextProducts));
+        products = nextProducts;
+        return true;
+      } catch {
+        announce('Não foi possível salvar a alteração neste navegador.', true);
+        return false;
+      }
+    }
+
+    function render() {
+      const today = todayKey();
+      const ordered = [...products].sort((a, b) => a.expiry.localeCompare(b.expiry)
+        || a.name.localeCompare(b.name, 'pt-BR'));
+      empty.hidden = ordered.length > 0;
+      list.replaceChildren(...ordered.map(item => {
+        const row = document.createElement('li');
+        const details = document.createElement('div');
+        const product = document.createElement('span');
+        product.className = 'product';
+        product.textContent = item.name;
+
+        const date = document.createElement('time');
+        date.dateTime = item.expiry;
+        date.textContent = item.expiry.split('-').reverse().join('/');
+        details.append(product, date);
+
+        const [label, status] = expiryStatus(item.expiry, today);
+        const badge = document.createElement('span');
+        badge.className = 'badge ' + status;
+        badge.textContent = label;
+
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'remove';
+        remove.textContent = 'Remover';
+        remove.setAttribute('aria-label', 'Remover ' + item.name);
+        remove.addEventListener('click', () => {
+          if (!storeProducts(products.filter(candidate => candidate.id !== item.id))) return;
+          render();
+          heading.focus();
+          announce('Produto removido.');
+        });
+
+        row.append(details, badge, remove);
+        return row;
+      }));
+    }
+
+    nameInput.addEventListener('input', () => nameInput.setCustomValidity(''));
+    form.addEventListener('submit', event => {
+      event.preventDefault();
+      const name = nameInput.value.trim();
+      if (!name) {
+        nameInput.setCustomValidity('Informe o nome do produto.');
+        nameInput.reportValidity();
+        return;
+      }
+      const expiry = expiryInput.value;
+      if (!isDate(expiry)) {
+        announce('Informe uma data de validade válida.', true);
+        return;
+      }
+      const id = crypto.randomUUID ? crypto.randomUUID()
+        : Array.from(crypto.getRandomValues(new Uint32Array(4)), value => value.toString(16)).join('-');
+      if (!storeProducts([...products, { id, name, expiry }])) return;
+      form.reset();
+      render();
+      nameInput.focus();
+      announce('Produto adicionado.');
+    });
+
+    window.addEventListener('storage', event => {
+      if (event.key === storageKey || event.key === null) {
+        products = readProducts();
+        render();
+      }
+    });
+    window.addEventListener('focus', render);
+    let lastDay = todayKey();
+    setInterval(() => {
+      const currentDay = todayKey();
+      if (currentDay !== lastDay) {
+        lastDay = currentDay;
+        render();
+      }
+    }, 30000);
+
+    render();
+  </script>
+</body>
+</html>
