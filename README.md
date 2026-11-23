@@ -4,7 +4,9 @@ Aplicação web que registra produtos e organiza os prazos de validade. Os dados
 
 ## Executar
 
-Extraia o ZIP e abra `index.html` no navegador. Se o navegador impedir a persistência ao abrir arquivos locais, abra um terminal na pasta do projeto e execute:
+Extraia o ZIP e abra `index.html` no navegador.
+
+Para obter o código pelo GitHub, clique em **Code**, depois em **Download ZIP**, extraia todos os arquivos (botão direito no ZIP e **Extrair Tudo**) e abra `index.html` no navegador. Se o navegador impedir a persistência ao abrir arquivos locais, abra um terminal na pasta do projeto e execute:
 
 ```sh
 python3 -m http.server 8000 --bind 127.0.0.1
